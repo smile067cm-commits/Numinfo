@@ -5,7 +5,12 @@
  */
 
 import { parquetMetadataAsync, parquetRead } from 'hyparquet';
-import { compressors } from 'hyparquet-compressors';
+import { decompress } from 'fzstd';
+
+// Pure JavaScript ZSTD decompressor (Zero WASM, 100% Cloudflare Worker compliant)
+const compressors = {
+  ZSTD: (bytes) => decompress(bytes)
+};
 
 const DATASET_BASE_URL = 'https://huggingface.co/datasets/ansh21112/hitek-data-bucket/resolve/main';
 
@@ -188,12 +193,12 @@ async function sendTelegramAction(botToken, chatId, action = 'typing') {
 /**
  * Formats data records into clean Telegram HTML
  */
-function formatTelegramResponse(phone, result) {
+function formatTelegramResponse(phone, result, devTag = '@poojaxyz1') {
   if (result.status === 'not_found') {
-    return `❌ <b>No records found for:</b> <code>${phone}</code>\n\n👨‍💻 <b>Developer:</b> @Maybechx`;
+    return `❌ <b>No records found for:</b> <code>${phone}</code>\n\n👨‍💻 <b>Developer:</b> ${devTag}`;
   }
   if (result.status === 'rejected') {
-    return `⚠️ <b>Error:</b> ${result.message}\n\n👨‍💻 <b>Developer:</b> @Maybechx`;
+    return `⚠️ <b>Error:</b> ${result.message}\n\n👨‍💻 <b>Developer:</b> ${devTag}`;
   }
 
   let msg = `🔍 <b>Search Results for:</b> <code>${phone}</code>\n`;
@@ -231,7 +236,7 @@ function formatTelegramResponse(phone, result) {
     });
   }
 
-  msg += `👨‍💻 <b>Developer:</b> @Maybechx`;
+  msg += `👨‍💻 <b>Developer:</b> ${devTag}`;
   return msg;
 }
 
@@ -243,6 +248,7 @@ export default {
     const url = new URL(request.url);
     const method = request.method;
     const botToken = env.TELEGRAM_BOT_TOKEN;
+    const devTag = env.DEVELOPER || '@poojaxyz1';
 
     // 1. CORS Preflight
     if (method === 'OPTIONS') {
@@ -269,7 +275,7 @@ export default {
             const welcomeText = `👋 <b>Welcome to Hitek Data Bot!</b>\n\n` +
               `Send any <b>10 to 15 digit mobile number</b> to search live records in real-time.\n\n` +
               `<i>Example:</i> <code>1400500510</code>\n\n` +
-              `👨‍💻 <b>Developer:</b> @Maybechx`;
+              `👨‍💻 <b>Developer:</b> ${devTag}`;
             await sendTelegramMessage(botToken, chatId, welcomeText);
             return new Response('OK', { status: 200 });
           }
@@ -284,11 +290,14 @@ export default {
           const targetPhone = numberMatch[0];
           
           // Send typing indicator in background
-          ctx.waitUntil(sendTelegramAction(botToken, chatId, 'typing'));
+          if (ctx && ctx.waitUntil) {
+            ctx.waitUntil(sendTelegramAction(botToken, chatId, 'typing'));
+          }
 
           // Perform live on-demand cloud search
           const searchResult = await searchPhoneNumber(targetPhone);
-          const replyText = formatTelegramResponse(targetPhone, searchResult);
+          searchResult.Developer = devTag;
+          const replyText = formatTelegramResponse(targetPhone, searchResult, devTag);
 
           await sendTelegramMessage(botToken, chatId, replyText);
           return new Response('OK', { status: 200 });
@@ -308,7 +317,7 @@ export default {
         return new Response(JSON.stringify({
           status: 'rejected',
           message: 'Invalid parameter. STRICTLY use /FetchData?Number=XXXXXXXXXX',
-          Developer: '@Maybechx'
+          Developer: devTag
         }), {
           status: 400,
           headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
@@ -316,6 +325,7 @@ export default {
       }
 
       const result = await searchPhoneNumber(number);
+      result.Developer = devTag;
       const statusCode = result.status === 'success' ? 200 : (result.status === 'not_found' ? 404 : 400);
 
       return new Response(JSON.stringify(result), {
@@ -333,7 +343,7 @@ export default {
           telegram_webhook: 'POST /',
           rest_api: 'GET /FetchData?Number=XXXXXXXXXX'
         },
-        Developer: '@Maybechx'
+        Developer: devTag
       }), {
         headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
       });
@@ -342,7 +352,7 @@ export default {
     return new Response(JSON.stringify({
       status: 'rejected',
       message: 'Invalid endpoint. STRICTLY use /FetchData?Number=XXXXXXXXXX',
-      Developer: '@Maybechx'
+      Developer: devTag
     }), {
       status: 404,
       headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
