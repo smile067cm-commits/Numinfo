@@ -1,0 +1,7 @@
+name = "hitek-data-bot"
+main = "index.js"
+compatibility_date = "2024-11-01"
+
+[vars]
+TELEGRAM_BOT_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN_HERE"
+DEVELOPER = "@Maybechx"

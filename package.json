@@ -1,0 +1,12 @@
+{
+  "name": "hitek-data-worker",
+  "version": "1.0.0",
+  "description": "High-Speed Telegram Bot & Cloudflare Worker for Parquet Shard Streaming",
+  "main": "index.js",
+  "type": "module",
+  "dependencies": {
+    "hyparquet": "^1.4.2",
+    "hyparquet-compressors": "^1.1.1",
+    "fzstd": "^0.1.1"
+  }
+}
