@@ -32,6 +32,27 @@ function cleanPhone(val) {
   return digits.length >= 10 ? digits.slice(-10) : digits;
 }
 
+// Global metadata cache in Worker isolate memory to eliminate CPU timeout
+const metadataCache = new Map();
+
+async function getShardMetadata(shardName, directUrl, byteLength) {
+  if (metadataCache.has(shardName)) {
+    return metadataCache.get(shardName);
+  }
+  const asyncBuffer = {
+    byteLength,
+    async slice(start, end) {
+      const res = await fetch(directUrl, {
+        headers: { Range: `bytes=${start}-${end - 1}` }
+      });
+      return await res.arrayBuffer();
+    }
+  };
+  const metadata = await parquetMetadataAsync(asyncBuffer);
+  metadataCache.set(shardName, metadata);
+  return metadata;
+}
+
 /**
  * Streams and queries a single remote Parquet shard for a specific column and number
  */
@@ -51,7 +72,7 @@ async function queryParquetShard(shardName, targetCol, number, recordType) {
   };
 
   try {
-    const metadata = await parquetMetadataAsync(asyncBuffer);
+    const metadata = await getShardMetadata(shardName, directUrl, byteLength);
     if (!metadata || !metadata.row_groups) return [];
 
     const target10 = cleanPhone(number);
@@ -68,13 +89,11 @@ async function queryParquetShard(shardName, targetCol, number, recordType) {
           if (target10 >= minVal && target10 <= maxVal) {
             candidateRowGroups.push(i);
           }
-        } else {
-          candidateRowGroups.push(i);
         }
-      } else {
-        candidateRowGroups.push(i);
       }
     }
+
+    if (candidateRowGroups.length === 0) return [];
 
     const matchedRecords = [];
     const schemaCols = metadata.schema.slice(1).map(s => s.name);
